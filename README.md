@@ -1,8 +1,8 @@
-# 💻 C++ Notepad v1.0.0
+# 💻 Cpp Notepad v1.0.0
 
 **Um editor de texto profissional e ultrarrápido desenvolvido em C++ com Windows API nativa.**
 
-[![GitHub](https://img.shields.io/badge/GitHub-c%2B%2BNotepad--1.0.0-blue)](https://github.com/Lipezinn01/c-plusplus-notepad-1.0.0)
+[![GitHub](https://img.shields.io/badge/GitHub-CppNotepad--1.0.0-blue)](https://github.com/Lipezinn01/CppNotepad-1.0.0)
 [![License](https://img.shields.io/badge/License-MIT-green)](LICENSE)
 [![Platform](https://img.shields.io/badge/Platform-Windows-0078D4)](https://www.microsoft.com/windows)
 [![Language](https://img.shields.io/badge/Language-C%2B%2B-00599C)](https://cplusplus.com)
@@ -46,18 +46,18 @@
 ## 🚀 Download e Instalação
 
 ### Opção 1: Download Direto
-[Baixar C++ Notepad v1.0.0](https://github.com/Lipezinn01/c-plusplus-notepad-1.0.0/releases)
+[Baixar Cpp Notepad v1.0.0](https://github.com/Lipezinn01/CppNotepad-1.0.0/releases)
 
 ```
-1. Faça download de NotepadCpp.exe
+1. Faça download de CppNotepad.exe
 2. Execute o arquivo
 3. Pronto! Sem instalação necessária
 ```
 
 ### Opção 2: Clonar do GitHub
 ```bash
-git clone https://github.com/Lipezinn01/c-plusplus-notepad-1.0.0.git
-cd c-plusplus-notepad-1.0.0
+git clone https://github.com/Lipezinn01/CppNotepad-1.0.0.git
+cd CppNotepad-1.0.0
 ```
 
 ---
@@ -150,7 +150,7 @@ Existem **2 versões** do Notepad disponíveis:
 - Interface Tkinter
 - ~10-15 MB
 
-### 💻 **[C++ Notepad](https://github.com/Lipezinn01/c-plusplus-notepad-1.0.0)** (ESTE REPOSITÓRIO)
+### 💻 **[Cpp Notepad](https://github.com/Lipezinn01/CppNotepad-1.0.0)** (ESTE REPOSITÓRIO)
 - Máxima performance
 - Windows nativo
 - Arquivo ultra-compacto (~50-100 KB)
@@ -170,12 +170,12 @@ Se quiser compilar do código-fonte:
 
 ### Compilar com Visual Studio
 ```batch
-cl /O2 /Fe:NotepadCpp.exe notepad.cpp /link user32.lib gdi32.lib comdlg32.lib comctl32.lib
+cl /O2 /Fe:CppNotepad.exe notepad.cpp /link user32.lib gdi32.lib comdlg32.lib comctl32.lib
 ```
 
 ### Compilar com MinGW
 ```bash
-g++ -O2 -o NotepadCpp.exe notepad.cpp -luser32 -lgdi32 -lcomdlg32 -lcomctl32
+g++ -O2 -o CppNotepad.exe notepad.cpp -luser32 -lgdi32 -lcomdlg32 -lcomctl32
 ```
 
 ---
@@ -251,7 +251,7 @@ Contribuições são bem-vindas! Você pode:
 
 ## 💬 Feedback e Sugestões
 
-Se tiver sugestões ou encontrar bugs, abra uma [Issue](https://github.com/Lipezinn01/c-plusplus-notepad-1.0.0/issues).
+Se tiver sugestões ou encontrar bugs, abra uma [Issue](https://github.com/Lipezinn01/CppNotepad-1.0.0/issues).
 
 ---
 
@@ -286,6 +286,6 @@ Se este projeto foi útil para você, considere deixar uma ⭐ no GitHub!
 
 **Desenvolvido com ❤️ em C++**
 
-[⬆ Voltar ao topo](#-c-notepad-v100)
+[⬆ Voltar ao topo](#-cpp-notepad-v100)
 
 </div>
