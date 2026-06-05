@@ -3,7 +3,6 @@
 **Um editor de texto profissional e ultrarrápido desenvolvido em C++ com Windows API nativa.**
 
 [![GitHub](https://img.shields.io/badge/GitHub-CppNotepad--1.0.0-blue)](https://github.com/Lipezinn01/CppNotepad-1.0.0)
-[![License](https://img.shields.io/badge/License-MIT-green)](LICENSE)
 [![Platform](https://img.shields.io/badge/Platform-Windows-0078D4)](https://www.microsoft.com/windows)
 [![Language](https://img.shields.io/badge/Language-C%2B%2B-00599C)](https://cplusplus.com)
 
