@@ -5,10 +5,12 @@
 #include <vector>
 #include <cstring>
 
+#pragma comment(lib, "Advapi32.lib")
+#pragma comment(lib, "Shell32.lib")
 #pragma comment(linker, "\"/manifestdependency:type='win32' name='Microsoft.Windows.Common-Controls' version='6.0.0.0' processorArchitecture='*' publicKeyToken='6595b64144ccf1df' language='*'\"")
 
-#define ID_SALVAR_COMO 201
-#define ID_SALVAR_TXT  202
+#define ID_SALVAR      201
+#define ID_SALVAR_COMO 202
 #define ID_ABRIR       203
 #define ID_FORMATAR    204
 #define ID_AJUDA       205
@@ -23,6 +25,7 @@
 
 HWND hTexto;
 bool modificado = false, qAutomatica = true;
+std::wstring caminhoAtual;
 int tamFonte = 11;
 HFONT hFonte = NULL;
 HFONT hFonteBotoes = NULL;
@@ -35,8 +38,8 @@ WNDPROC oldEdit;
 // ============================================================
 
 struct Textos {
-    const wchar_t* salvarComo;
-    const wchar_t* salvarTxt;
+    const wchar_t* salvar;
+    const wchar_t* salvarComoOutro;
     const wchar_t* abrir;
     const wchar_t* formatar;
     const wchar_t* ajuda;
@@ -73,8 +76,8 @@ Textos textos[3] = {
 
     // ENGLISH
     {
-        L"Save As...",
-        L"Save .txt",
+        L"Save",
+        L"Save As Other",
         L"Open",
         L"Format",
         L"Help",
@@ -109,8 +112,8 @@ Textos textos[3] = {
 
     // PORTUGUÊS
     {
-        L"Salvar Como...",
-        L"Salvar .txt",
+        L"Salvar",
+        L"Salvar Como Outro",
         L"Abrir",
         L"Formatar",
         L"Ajuda",
@@ -145,8 +148,8 @@ Textos textos[3] = {
 
     // ESPAÑOL
     {
-        L"Guardar Como...",
-        L"Guardar .txt",
+        L"Guardar",
+        L"Guardar Como Otro",
         L"Abrir",
         L"Formato",
         L"Ayuda",
@@ -192,24 +195,17 @@ std::wstring CaminhoLang() {
 
     wchar_t caminho[MAX_PATH] = {};
 
-    if (GetEnvironmentVariableW(
+    DWORD tamanho = GetEnvironmentVariableW(
         L"LOCALAPPDATA",
         caminho,
         MAX_PATH
-    ) == 0) {
-        return L"lang.dat";
-    }
-
-    std::wstring pasta =
-        std::wstring(caminho) +
-        L"\\NotepadCpp";
-
-    CreateDirectoryW(
-        pasta.c_str(),
-        NULL
     );
 
-    return pasta + L"\\lang.dat";
+    if (tamanho == 0 || tamanho >= MAX_PATH)
+        return L"";
+
+    return std::wstring(caminho) +
+           L"\\NotepadCpp\\lang.dat";
 }
 
 // ============================================================
@@ -230,10 +226,8 @@ void LerIdioma() {
         NULL
     );
 
-    if (f == INVALID_HANDLE_VALUE) {
-        CriarLangPadrao();
+    if (f == INVALID_HANDLE_VALUE)
         return;
-    }
 
     char texto[16] = {};
     DWORD lidos = 0;
@@ -265,7 +259,6 @@ void LerIdioma() {
     else
         idioma = 1;
 }
-
 // ============================================================
 // GRAVAR LANG.DAT
 // ============================================================
@@ -383,14 +376,150 @@ void AplicarFonte() {
 }
 
 // ============================================================
+// REGISTRAR O APLICATIVO NO WINDOWS
+// ============================================================
+
+// O Windows exige que o usuário confirme o aplicativo padrão
+// em Configurações > Aplicativos > Aplicativos padrão.
+void RegistrarAssociacaoWindows() {
+    wchar_t exe[MAX_PATH] = {};
+    if (!GetModuleFileNameW(NULL, exe, MAX_PATH))
+        return;
+
+    wchar_t* nomeExe = wcsrchr(exe, L'\\');
+    nomeExe = nomeExe ? nomeExe + 1 : exe;
+
+    const wchar_t* progId = L"NotepadCpp.Text";
+
+    auto criarValor = [](HKEY raiz, const std::wstring& chave,
+                         const wchar_t* nome, const std::wstring& valor) {
+        HKEY hKey = NULL;
+        if (RegCreateKeyExW(raiz, chave.c_str(), 0, NULL, 0,
+                            KEY_WRITE, NULL, &hKey, NULL) == ERROR_SUCCESS) {
+            RegSetValueExW(hKey, nome, 0, REG_SZ,
+                reinterpret_cast<const BYTE*>(valor.c_str()),
+                static_cast<DWORD>((valor.size() + 1) * sizeof(wchar_t)));
+            RegCloseKey(hKey);
+        }
+    };
+
+    const std::wstring appKey =
+        L"Software\\Classes\\Applications\\" + std::wstring(nomeExe);
+
+    criarValor(HKEY_CURRENT_USER, appKey + L"\\shell\\open\\command",
+               NULL, L"\"" + std::wstring(exe) + L"\" \"%1\"");
+    criarValor(HKEY_CURRENT_USER, appKey + L"\\SupportedTypes",
+               L".txt", L"");
+
+    criarValor(HKEY_CURRENT_USER, L"Software\\Classes\\.txt\\OpenWithProgids",
+               progId, L"");
+
+    criarValor(HKEY_CURRENT_USER,
+               L"Software\\Classes\\NotepadCpp.Text",
+               NULL, L"Documento de texto - NotepadCpp");
+    criarValor(HKEY_CURRENT_USER,
+               L"Software\\Classes\\NotepadCpp.Text\\DefaultIcon",
+               NULL, L"\"" + std::wstring(exe) + L"\",0");
+    criarValor(HKEY_CURRENT_USER,
+               L"Software\\Classes\\NotepadCpp.Text\\shell\\open\\command",
+               NULL, L"\"" + std::wstring(exe) + L"\" \"%1\"");
+
+    const std::wstring cap =
+        L"Software\\NotepadCpp\\Capabilities";
+    criarValor(HKEY_CURRENT_USER, cap, L"ApplicationName", L"NotepadCpp");
+    criarValor(HKEY_CURRENT_USER, cap, L"ApplicationDescription",
+               L"Editor simples de arquivos de texto");
+    criarValor(HKEY_CURRENT_USER, cap + L"\\FileAssociations",
+               L".txt", progId);
+    criarValor(HKEY_CURRENT_USER,
+               L"Software\\RegisteredApplications",
+               L"NotepadCpp", L"Software\\NotepadCpp\\Capabilities");
+}
+
+// Abre um caminho recebido pelo diálogo, pela linha de comando
+// ou por arrastar e soltar.
+void CarregarArquivo(const wchar_t* caminho, HWND hw) {
+    if (!caminho || !*caminho)
+        return;
+
+    HANDLE f = CreateFileW(caminho, GENERIC_READ, FILE_SHARE_READ,
+                           NULL, OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL, NULL);
+    if (f == INVALID_HANDLE_VALUE) {
+        MessageBoxW(hw, L"Não foi possível abrir esse arquivo.",
+                    T().aviso, MB_OK | MB_ICONERROR);
+        return;
+    }
+
+    LARGE_INTEGER tamanho;
+    if (!GetFileSizeEx(f, &tamanho) || tamanho.QuadPart < 0 ||
+        tamanho.QuadPart > 50LL * 1024 * 1024) {
+        CloseHandle(f);
+        MessageBoxW(hw, L"Arquivo inválido ou maior que 50 MB.",
+                    T().aviso, MB_OK | MB_ICONWARNING);
+        return;
+    }
+
+    std::vector<char> bytes(static_cast<size_t>(tamanho.QuadPart) + 1);
+    DWORD lidos = 0;
+    BOOL ok = ReadFile(f, bytes.data(),
+                       static_cast<DWORD>(tamanho.QuadPart), &lidos, NULL);
+    CloseHandle(f);
+
+    if (!ok) {
+        MessageBoxW(hw, L"Erro ao ler o arquivo.",
+                    T().aviso, MB_OK | MB_ICONERROR);
+        return;
+    }
+
+    bytes[lidos] = '\0';
+    int chars = MultiByteToWideChar(CP_UTF8, MB_ERR_INVALID_CHARS,
+                                    bytes.data(), lidos, NULL, 0);
+    UINT pagina = CP_UTF8;
+    DWORD flags = MB_ERR_INVALID_CHARS;
+
+    // Compatibilidade com arquivos ANSI/Windows antigos.
+    if (chars <= 0) {
+        pagina = CP_ACP;
+        flags = 0;
+        chars = MultiByteToWideChar(pagina, flags, bytes.data(),
+                                    lidos, NULL, 0);
+    }
+
+    if (chars < 0)
+        return;
+
+    std::vector<wchar_t> texto(static_cast<size_t>(chars) + 1);
+    if (chars > 0)
+        MultiByteToWideChar(pagina, flags, bytes.data(), lidos,
+                            texto.data(), chars);
+    texto[chars] = L'\0';
+
+    SetWindowTextW(hTexto, texto.data());
+    modificado = false;
+    caminhoAtual = caminho;
+
+    std::wstring titulo = std::wstring(T().titulo) + L" - " + caminho;
+    SetWindowTextW(hw, titulo.c_str());
+}
+
+void AbrirArquivoSolto(HDROP drop, HWND hw) {
+    if (!drop)
+        return;
+
+    wchar_t caminho[MAX_PATH] = {};
+    if (DragQueryFileW(drop, 0, caminho, MAX_PATH))
+        CarregarArquivo(caminho, hw);
+
+    DragFinish(drop);
+}
+
+// ============================================================
 // ABRIR
 // ============================================================
 
 void Abrir(HWND hw) {
-
     OPENFILENAMEW ofn = {};
     wchar_t arq[MAX_PATH] = L"";
-
     std::wstring filtro = FiltroAbrir();
 
     ofn.lStructSize = sizeof(ofn);
@@ -400,175 +529,116 @@ void Abrir(HWND hw) {
     ofn.lpstrFilter = filtro.c_str();
     ofn.Flags = OFN_FILEMUSTEXIST;
 
-    if (!GetOpenFileNameW(&ofn))
-        return;
-
-    HANDLE f = CreateFileW(
-        arq,
-        GENERIC_READ,
-        FILE_SHARE_READ,
-        NULL,
-        OPEN_EXISTING,
-        FILE_ATTRIBUTE_NORMAL,
-        NULL
-    );
-
-    if (f == INVALID_HANDLE_VALUE)
-        return;
-
-    DWORD tam = GetFileSize(f, NULL);
-
-    if (tam == INVALID_FILE_SIZE && GetLastError() != NO_ERROR) {
-        CloseHandle(f);
-        return;
-    }
-
-    std::vector<char> b(tam + 1);
-
-    DWORD lidos = 0;
-
-    BOOL ok = ReadFile(
-        f,
-        b.data(),
-        tam,
-        &lidos,
-        NULL
-    );
-
-    CloseHandle(f);
-
-    if (!ok)
-        return;
-
-    b[lidos] = '\0';
-
-    int wTam = MultiByteToWideChar(
-        CP_UTF8,
-        0,
-        b.data(),
-        lidos,
-        NULL,
-        0
-    );
-
-    if (wTam <= 0)
-        return;
-
-    std::vector<wchar_t> wb(wTam + 1);
-
-    MultiByteToWideChar(
-        CP_UTF8,
-        0,
-        b.data(),
-        lidos,
-        wb.data(),
-        wTam
-    );
-
-    wb[wTam] = L'\0';
-
-    SetWindowTextW(
-        hTexto,
-        wb.data()
-    );
-
-    modificado = false;
-
-    std::wstring titulo =
-        std::wstring(T().titulo) +
-        L" - " +
-        arq;
-
-    SetWindowTextW(
-        hw,
-        titulo.c_str()
-    );
+    if (GetOpenFileNameW(&ofn))
+        CarregarArquivo(arq, hw);
 }
 
 // ============================================================
-// SALVAR
+// SALVAR E SALVAR COMO OUTRO
 // ============================================================
 
-void Salvar(HWND hw) {
+bool GravarNoCaminho(const std::wstring& caminho, HWND hw) {
+    int t = GetWindowTextLengthW(hTexto);
+    std::vector<wchar_t> b(static_cast<size_t>(t) + 1);
 
+    GetWindowTextW(hTexto, b.data(), t + 1);
+
+    int uTam = WideCharToMultiByte(
+        CP_UTF8, 0, b.data(), -1, NULL, 0, NULL, NULL
+    );
+
+    if (uTam <= 0)
+        return false;
+
+    std::vector<char> ub(static_cast<size_t>(uTam));
+    if (!WideCharToMultiByte(
+        CP_UTF8, 0, b.data(), -1, ub.data(), uTam, NULL, NULL
+    ))
+        return false;
+
+    HANDLE f = CreateFileW(
+        caminho.c_str(), GENERIC_WRITE, 0, NULL,
+        CREATE_ALWAYS, FILE_ATTRIBUTE_NORMAL, NULL
+    );
+
+    if (f == INVALID_HANDLE_VALUE) {
+        MessageBoxW(hw, L"Não foi possível salvar o arquivo.",
+                    T().aviso, MB_OK | MB_ICONERROR);
+        return false;
+    }
+
+    DWORD escritos = 0;
+    DWORD bytesParaGravar = static_cast<DWORD>(uTam - 1);
+    BOOL ok = WriteFile(f, ub.data(), bytesParaGravar, &escritos, NULL);
+    CloseHandle(f);
+
+    if (!ok || escritos != bytesParaGravar) {
+        MessageBoxW(hw, L"Ocorreu um erro ao gravar o arquivo.",
+                    T().aviso, MB_OK | MB_ICONERROR);
+        return false;
+    }
+
+    caminhoAtual = caminho;
+    modificado = false;
+
+    std::wstring titulo = std::wstring(T().titulo) + L" - " + caminhoAtual;
+    SetWindowTextW(hw, titulo.c_str());
+    return true;
+}
+
+// Abre a janela de escolha de destino. Usada por "Salvar Como Outro"
+// e também por "Salvar" quando ainda não existe um arquivo associado.
+bool SalvarComoOutro(HWND hw) {
     OPENFILENAMEW ofn = {};
     wchar_t ca[MAX_PATH] = L"";
+    wchar_t pastaInicial[MAX_PATH] = L"";
+
+    // Ao usar "Salvar Como Outro", começa na mesma pasta do arquivo
+    // atualmente aberto e mantém o nome do arquivo como sugestão.
+    if (!caminhoAtual.empty()) {
+        wcsncpy_s(ca, MAX_PATH, caminhoAtual.c_str(), _TRUNCATE);
+
+        size_t pos = caminhoAtual.find_last_of(L"\\/");
+        if (pos != std::wstring::npos) {
+            std::wstring pasta = caminhoAtual.substr(0, pos);
+            wcsncpy_s(pastaInicial, MAX_PATH, pasta.c_str(), _TRUNCATE);
+        }
+    }
+
+    // Para documentos ainda sem caminho, usa a pasta de trabalho atual.
+    if (pastaInicial[0] == L'\0') {
+        DWORD n = GetCurrentDirectoryW(MAX_PATH, pastaInicial);
+        if (n == 0 || n >= MAX_PATH)
+            pastaInicial[0] = L'\0';
+    }
 
     std::wstring filtro = FiltroSalvar();
-
     ofn.lStructSize = sizeof(ofn);
     ofn.hwndOwner = hw;
     ofn.lpstrFile = ca;
     ofn.nMaxFile = MAX_PATH;
     ofn.lpstrFilter = filtro.c_str();
+    ofn.nFilterIndex = 1;
+    ofn.lpstrDefExt = L"txt";
+    ofn.lpstrInitialDir = pastaInicial[0] ? pastaInicial : NULL;
+    ofn.Flags = OFN_EXPLORER |
+                OFN_PATHMUSTEXIST |
+                OFN_OVERWRITEPROMPT |
+                OFN_NOCHANGEDIR;
 
     if (!GetSaveFileNameW(&ofn))
-        return;
+        return false;
 
-    int t = GetWindowTextLengthW(hTexto);
+    return GravarNoCaminho(ca, hw);
+}
 
-    std::vector<wchar_t> b(t + 1);
+// Salvar mantém o arquivo que foi aberto (inclusive por arrastar/soltar
+// ou pela associação do Windows). Só pede um caminho para documentos novos.
+bool Salvar(HWND hw) {
+    if (caminhoAtual.empty())
+        return SalvarComoOutro(hw);
 
-    GetWindowTextW(
-        hTexto,
-        b.data(),
-        t + 1
-    );
-
-    int uTam = WideCharToMultiByte(
-        CP_UTF8,
-        0,
-        b.data(),
-        -1,
-        NULL,
-        0,
-        NULL,
-        NULL
-    );
-
-    if (uTam <= 0)
-        return;
-
-    std::vector<char> ub(uTam);
-
-    WideCharToMultiByte(
-        CP_UTF8,
-        0,
-        b.data(),
-        -1,
-        ub.data(),
-        uTam,
-        NULL,
-        NULL
-    );
-
-    HANDLE f = CreateFileW(
-        ca,
-        GENERIC_WRITE,
-        0,
-        NULL,
-        CREATE_ALWAYS,
-        FILE_ATTRIBUTE_NORMAL,
-        NULL
-    );
-
-    if (f == INVALID_HANDLE_VALUE)
-        return;
-
-    DWORD escritos = 0;
-
-    BOOL ok = WriteFile(
-        f,
-        ub.data(),
-        uTam - 1,
-        &escritos,
-        NULL
-    );
-
-    CloseHandle(f);
-
-    if (ok && escritos == (DWORD)(uTam - 1))
-        modificado = false;
+    return GravarNoCaminho(caminhoAtual, hw);
 }
 
 // ============================================================
@@ -661,6 +731,11 @@ LRESULT CALLBACK EditProc(
         }
     }
 
+    if (m == WM_DROPFILES) {
+        AbrirArquivoSolto((HDROP)wp, GetParent(hw));
+        return 0;
+    }
+
     return CallWindowProcW(
         oldEdit,
         hw,
@@ -750,6 +825,10 @@ LRESULT CALLBACK AuxWindowProc(
 
             break;
         }
+
+        case WM_DROPFILES:
+            AbrirArquivoSolto((HDROP)wp, hw);
+            return 0;
 
         case WM_CLOSE:
             DestroyWindow(hw);
@@ -1144,8 +1223,8 @@ LRESULT CALLBACK WindowProc(
                 );
 
             int ids[] = {
+                ID_SALVAR,
                 ID_SALVAR_COMO,
-                ID_SALVAR_TXT,
                 ID_ABRIR,
                 ID_FORMATAR,
                 ID_AJUDA,
@@ -1154,25 +1233,25 @@ LRESULT CALLBACK WindowProc(
 
             int px[] = {
                 5,
-                120,
-                225,
-                390,
-                485,
-                575
+                95,
+                245,
+                410,
+                505,
+                590
             };
 
             int la[] = {
-                110,
-                100,
-                160,
+                85,
+                145,
+                155,
                 90,
                 80,
                 100
             };
 
             const wchar_t* lbls[] = {
-                T().salvarComo,
-                T().salvarTxt,
+                T().salvar,
+                T().salvarComoOutro,
                 T().abrir,
                 T().formatar,
                 T().ajuda,
@@ -1236,6 +1315,8 @@ LRESULT CALLBACK WindowProc(
                 );
 
             AplicarFonte();
+            DragAcceptFiles(hw, TRUE);
+            DragAcceptFiles(hTexto, TRUE);
 
             return 0;
         }
@@ -1263,12 +1344,12 @@ LRESULT CALLBACK WindowProc(
 
             switch (LOWORD(wp)) {
 
-                case ID_SALVAR_COMO:
+                case ID_SALVAR:
                     Salvar(hw);
                     break;
 
-                case ID_SALVAR_TXT:
-                    Salvar(hw);
+                case ID_SALVAR_COMO:
+                    SalvarComoOutro(hw);
                     break;
 
                 case ID_ABRIR:
@@ -1394,6 +1475,10 @@ LRESULT CALLBACK WindowProc(
             return 0;
         }
 
+        case WM_DROPFILES:
+            AbrirArquivoSolto((HDROP)wp, hw);
+            return 0;
+
         case WM_CLOSE:
 
             if (modificado) {
@@ -1407,9 +1492,10 @@ LRESULT CALLBACK WindowProc(
                         MB_ICONWARNING
                     );
 
-                if (r == IDYES)
-                    Salvar(hw);
-
+                if (r == IDYES) {
+                    if (!Salvar(hw))
+                        return 0;
+                }
                 else if (r == IDCANCEL)
                     return 0;
             }
@@ -1451,6 +1537,7 @@ int WINAPI WinMain(
 ) {
 
     LerIdioma();
+    RegistrarAssociacaoWindows();
 
     InitCommonControls();
 
@@ -1491,6 +1578,15 @@ int WINAPI WinMain(
 
     ShowWindow(hw, nS);
     UpdateWindow(hw);
+
+    // Permite abrir arquivos pelo menu "Abrir com" e por duplo clique.
+    int argc = 0;
+    LPWSTR* argv = CommandLineToArgvW(GetCommandLineW(), &argc);
+    if (argv) {
+        if (argc >= 2)
+            CarregarArquivo(argv[1], hw);
+        LocalFree(argv);
+    }
 
     MSG msg;
 
