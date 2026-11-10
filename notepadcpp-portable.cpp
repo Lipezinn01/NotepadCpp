@@ -16,6 +16,9 @@
 #define ID_AJUDA       205
 #define ID_IDIOMAS     207
 #define ID_AREA_TEXTO  206
+#define ID_EXIBIR      208
+#define ID_STATUS_BAR  209
+#define ID_BARRA_STATUS 903
 
 #define ID_LANG_EN     301
 #define ID_LANG_PT     302
@@ -24,6 +27,8 @@
 #define ID_CANCEL      305
 
 HWND hTexto;
+HWND hStatusBar = NULL;
+bool barraStatusAtiva = true;
 bool modificado = false, qAutomatica = true;
 std::wstring caminhoAtual;
 int tamFonte = 11;
@@ -42,6 +47,8 @@ struct Textos {
     const wchar_t* salvarComoOutro;
     const wchar_t* abrir;
     const wchar_t* formatar;
+    const wchar_t* exibir;
+    const wchar_t* barraStatus;
     const wchar_t* ajuda;
     const wchar_t* idiomas;
 
@@ -80,6 +87,8 @@ Textos textos[3] = {
         L"Save As Other",
         L"Open",
         L"Format",
+        L"View",
+        L"Status bar",
         L"Help",
         L"Language",
 
@@ -116,6 +125,8 @@ Textos textos[3] = {
         L"Salvar Como Outro",
         L"Abrir",
         L"Formatar",
+        L"Exibir",
+        L"Barra de status",
         L"Ajuda",
         L"Idiomas",
 
@@ -152,6 +163,8 @@ Textos textos[3] = {
         L"Guardar Como Otro",
         L"Abrir",
         L"Formato",
+        L"Ver",
+        L"Barra de estado",
         L"Ayuda",
         L"Idiomas",
 
@@ -213,8 +226,121 @@ std::wstring CaminhoLang() {
 
     pasta.resize(pos);
 
-    // O arquivo de idioma fica em: [pasta do EXE]\\Lang\\Lang.DAT
-    return pasta + L"\\Lang\\Lang.DAT";
+    // O arquivo de idioma fica em: [pasta do EXE]\\Lang\\Lang.DAT.
+    // Cria a pasta Lang ao lado do executável caso ela ainda não exista.
+    std::wstring pastaLang = pasta + L"\\Lang";
+    CreateDirectoryW(pastaLang.c_str(), NULL);
+
+    return pastaLang + L"\\Lang.DAT";
+}
+
+// ============================================================
+// CONFIGURAÇÃO DA BARRA DE STATUS
+// ============================================================
+
+std::wstring CaminhoStatusBar() {
+    wchar_t exe[MAX_PATH] = {};
+    DWORD n = GetModuleFileNameW(NULL, exe, MAX_PATH);
+    if (n == 0 || n >= MAX_PATH)
+        return L"";
+
+    std::wstring pasta(exe);
+    size_t pos = pasta.find_last_of(L"\\/");
+    if (pos == std::wstring::npos)
+        return L"";
+
+    pasta.resize(pos);
+    std::wstring opcoes = pasta + L"\\Options";
+    CreateDirectoryW(opcoes.c_str(), NULL);
+    return opcoes + L"\\status_bar.dat";
+}
+
+void LerStatusBar() {
+    // Padrão: ativada quando ainda não existe arquivo de configuração.
+    barraStatusAtiva = true;
+
+    std::wstring caminho = CaminhoStatusBar();
+    if (caminho.empty())
+        return;
+
+    HANDLE f = CreateFileW(caminho.c_str(), GENERIC_READ, FILE_SHARE_READ,
+                           NULL, OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL, NULL);
+    if (f == INVALID_HANDLE_VALUE)
+        return;
+
+    char valor[16] = {};
+    DWORD lidos = 0;
+    BOOL ok = ReadFile(f, valor, sizeof(valor) - 1, &lidos, NULL);
+    CloseHandle(f);
+
+    if (ok) {
+        valor[lidos] = '\0';
+        barraStatusAtiva = (strcmp(valor, "true") == 0);
+    }
+}
+
+void GravarStatusBar() {
+    std::wstring caminho = CaminhoStatusBar();
+    if (caminho.empty())
+        return;
+
+    HANDLE f = CreateFileW(caminho.c_str(), GENERIC_WRITE, 0, NULL,
+                           CREATE_ALWAYS, FILE_ATTRIBUTE_NORMAL, NULL);
+    if (f == INVALID_HANDLE_VALUE)
+        return;
+
+    const char* valor = barraStatusAtiva ? "true" : "false";
+    DWORD escritos = 0;
+    WriteFile(f, valor, static_cast<DWORD>(strlen(valor)), &escritos, NULL);
+    CloseHandle(f);
+}
+
+void AtualizarTextoStatus() {
+    if (!hStatusBar || !IsWindowVisible(hStatusBar) || !hTexto)
+        return;
+
+    DWORD inicio = 0, fim = 0;
+    SendMessageW(hTexto, EM_GETSEL, (WPARAM)&inicio, (LPARAM)&fim);
+
+    LRESULT linha = SendMessageW(hTexto, EM_LINEFROMCHAR, (WPARAM)inicio, 0);
+    LRESULT inicioLinha = SendMessageW(hTexto, EM_LINEINDEX, (WPARAM)linha, 0);
+    int coluna = static_cast<int>(inicio - (inicioLinha < 0 ? 0 : inicioLinha)) + 1;
+
+    wchar_t texto[80] = {};
+    if (idioma == 1)
+        wsprintfW(texto, L"Ln %ld, Col %d", (long)(linha + 1), coluna);
+    else if (idioma == 2)
+        wsprintfW(texto, L"Ln %ld, Col %d", (long)(linha + 1), coluna);
+    else
+        wsprintfW(texto, L"Lín %ld, Col %d", (long)(linha + 1), coluna);
+
+    SendMessageW(hStatusBar, SB_SETTEXTW, 0, (LPARAM)texto);
+}
+
+void AtualizarLayout(HWND hw) {
+    if (!hTexto)
+        return;
+
+    RECT rc;
+    GetClientRect(hw, &rc);
+
+    int alturaStatus = 0;
+    if (hStatusBar) {
+        SendMessageW(hStatusBar, WM_SIZE, 0, 0);
+        if (barraStatusAtiva) {
+            RECT rs;
+            GetWindowRect(hStatusBar, &rs);
+            alturaStatus = rs.bottom - rs.top;
+            SetWindowPos(hStatusBar, NULL, 0, rc.bottom - alturaStatus,
+                         rc.right, alturaStatus, SWP_NOZORDER | SWP_SHOWWINDOW);
+        } else {
+            ShowWindow(hStatusBar, SW_HIDE);
+        }
+    }
+
+    MoveWindow(hTexto, 5, 40, rc.right - 10,
+               rc.bottom - 45 - alturaStatus, TRUE);
+    AtualizarTextoStatus();
 }
 
 // ============================================================
@@ -745,13 +871,11 @@ LRESULT CALLBACK EditProc(
         return 0;
     }
 
-    return CallWindowProcW(
-        oldEdit,
-        hw,
-        m,
-        wp,
-        lp
-    );
+    LRESULT resultado = CallWindowProcW(oldEdit, hw, m, wp, lp);
+    if (m == WM_KEYUP || m == WM_CHAR || m == WM_LBUTTONUP ||
+        m == WM_MOUSEWHEEL || m == WM_PASTE || m == WM_CUT)
+        AtualizarTextoStatus();
+    return resultado;
 }
 
 // ============================================================
@@ -1236,6 +1360,7 @@ LRESULT CALLBACK WindowProc(
                 ID_SALVAR_COMO,
                 ID_ABRIR,
                 ID_FORMATAR,
+                ID_EXIBIR,
                 ID_AJUDA,
                 ID_IDIOMAS
             };
@@ -1246,7 +1371,8 @@ LRESULT CALLBACK WindowProc(
                 245,
                 410,
                 505,
-                590
+                590,
+                675
             };
 
             int la[] = {
@@ -1254,6 +1380,7 @@ LRESULT CALLBACK WindowProc(
                 145,
                 155,
                 90,
+                80,
                 80,
                 100
             };
@@ -1263,11 +1390,12 @@ LRESULT CALLBACK WindowProc(
                 T().salvarComoOutro,
                 T().abrir,
                 T().formatar,
+                T().exibir,
                 T().ajuda,
                 T().idiomas
             };
 
-            for (int i = 0; i < 6; i++) {
+            for (int i = 0; i < 7; i++) {
 
                 HWND b =
                     CreateWindowExW(
@@ -1323,7 +1451,17 @@ LRESULT CALLBACK WindowProc(
                     (LONG_PTR)EditProc
                 );
 
+            hStatusBar = CreateStatusWindowW(
+                WS_CHILD | SBARS_SIZEGRIP,
+                L"",
+                hw,
+                ID_STATUS_BAR
+            );
+            if (hStatusBar && barraStatusAtiva)
+                ShowWindow(hStatusBar, SW_SHOW);
+
             AplicarFonte();
+            AtualizarLayout(hw);
             DragAcceptFiles(hw, TRUE);
             DragAcceptFiles(hTexto, TRUE);
 
@@ -1331,16 +1469,7 @@ LRESULT CALLBACK WindowProc(
         }
 
         case WM_SIZE:
-
-            MoveWindow(
-                hTexto,
-                5,
-                40,
-                LOWORD(lp) - 10,
-                HIWORD(lp) - 45,
-                TRUE
-            );
-
+            AtualizarLayout(hw);
             return 0;
 
         case WM_COMMAND: {
@@ -1350,6 +1479,9 @@ LRESULT CALLBACK WindowProc(
                 LOWORD(wp) == ID_AREA_TEXTO
             )
                 modificado = true;
+
+            if (LOWORD(wp) == ID_AREA_TEXTO && HIWORD(wp) == EN_CHANGE)
+                AtualizarTextoStatus();
 
             switch (LOWORD(wp)) {
 
@@ -1436,6 +1568,29 @@ LRESULT CALLBACK WindowProc(
                         EscolherFonte(hw);
                     }
 
+                    break;
+                }
+
+                case ID_EXIBIR: {
+                    HMENU hMenu = CreatePopupMenu();
+                    UINT estado = barraStatusAtiva ? MF_CHECKED : MF_UNCHECKED;
+                    AppendMenuW(hMenu, MF_STRING | estado,
+                                ID_BARRA_STATUS, T().barraStatus);
+
+                    RECT rc;
+                    GetWindowRect(GetDlgItem(hw, ID_EXIBIR), &rc);
+                    int selecao = TrackPopupMenu(
+                        hMenu,
+                        TPM_LEFTALIGN | TPM_TOPALIGN | TPM_RETURNCMD | TPM_RIGHTBUTTON,
+                        rc.left, rc.bottom, 0, hw, NULL
+                    );
+                    DestroyMenu(hMenu);
+
+                    if (selecao == ID_BARRA_STATUS) {
+                        barraStatusAtiva = !barraStatusAtiva;
+                        GravarStatusBar();
+                        AtualizarLayout(hw);
+                    }
                     break;
                 }
 
@@ -1546,6 +1701,7 @@ int WINAPI WinMain(
 ) {
 
     LerIdioma();
+    LerStatusBar();
     RegistrarAssociacaoWindows();
 
     InitCommonControls();
