@@ -510,6 +510,27 @@ void AplicarFonte() {
     );
 }
 
+// Alterna entre quebra visual automática e rolagem horizontal manual.
+void AplicarModoQuebraLinha() {
+    if (!hTexto)
+        return;
+
+    LONG_PTR estilo = GetWindowLongPtrW(hTexto, GWL_STYLE);
+
+    if (qAutomatica) {
+        estilo &= ~((LONG_PTR)ES_AUTOHSCROLL);
+        estilo &= ~((LONG_PTR)WS_HSCROLL);
+    } else {
+        estilo |= ES_AUTOHSCROLL;
+        estilo |= WS_HSCROLL;
+    }
+
+    SetWindowLongPtrW(hTexto, GWL_STYLE, estilo);
+    SetWindowPos(hTexto, NULL, 0, 0, 0, 0,
+                 SWP_NOMOVE | SWP_NOSIZE | SWP_NOZORDER |
+                 SWP_NOACTIVATE | SWP_FRAMECHANGED);
+}
+
 // ============================================================
 // REGISTRAR O APLICATIVO NO WINDOWS
 // ============================================================
@@ -629,7 +650,23 @@ void CarregarArquivo(const wchar_t* caminho, HWND hw) {
                             texto.data(), chars);
     texto[chars] = L'\0';
 
-    SetWindowTextW(hTexto, texto.data());
+    // Converte LF e CR isolados para CRLF, preservando as linhas do arquivo.
+    std::wstring textoNormalizado;
+    textoNormalizado.reserve(static_cast<size_t>(chars) + 1);
+
+    for (int i = 0; i < chars; ++i) {
+        if (texto[i] == L'\r') {
+            textoNormalizado += L"\r\n";
+            if (i + 1 < chars && texto[i + 1] == L'\n')
+                ++i;
+        } else if (texto[i] == L'\n') {
+            textoNormalizado += L"\r\n";
+        } else {
+            textoNormalizado += texto[i];
+        }
+    }
+
+    SetWindowTextW(hTexto, textoNormalizado.c_str());
     modificado = false;
     caminhoAtual = caminho;
 
@@ -819,51 +856,12 @@ LRESULT CALLBACK EditProc(
     LPARAM lp
 ) {
 
-    if (m == WM_CHAR) {
-
-        wchar_t ch = (wchar_t)wp;
-
-        if (
-            ch != 8 &&
-            ch != 127 &&
-            ch != 13 &&
-            GetAsyncKeyState(VK_CONTROL) >= 0
-        ) {
-
-            DWORD inicio = 0;
-            DWORD fim = 0;
-
-            SendMessageW(
-                hw,
-                EM_GETSEL,
-                (WPARAM)&inicio,
-                (LPARAM)&fim
-            );
-
-            int tl = (int)SendMessageW(
-                hw,
-                EM_LINELENGTH,
-                inicio,
-                0
-            );
-
-            if (tl >= 1024) {
-
-                if (qAutomatica) {
-
-                    SendMessageW(
-                        hw,
-                        EM_REPLACESEL,
-                        TRUE,
-                        (LPARAM)L"\r\n"
-                    );
-                }
-
-                else {
-                    return 0;
-                }
-            }
-        }
+    // Ctrl+A seleciona todo o conteúdo do editor.
+    if (m == WM_KEYDOWN && wp == 'A' &&
+        (GetKeyState(VK_CONTROL) & 0x8000)) {
+        SendMessageW(hw, EM_SETSEL, 0, -1);
+        AtualizarTextoStatus();
+        return 0;
     }
 
     if (m == WM_DROPFILES) {
@@ -1430,10 +1428,8 @@ LRESULT CALLBACK WindowProc(
                     WS_CHILD |
                     WS_VISIBLE |
                     WS_VSCROLL |
-                    WS_HSCROLL |
                     ES_MULTILINE |
-                    ES_AUTOVSCROLL |
-                    ES_AUTOHSCROLL,
+                    ES_AUTOVSCROLL,
                     5,
                     40,
                     875,
@@ -1460,6 +1456,7 @@ LRESULT CALLBACK WindowProc(
             if (hStatusBar && barraStatusAtiva)
                 ShowWindow(hStatusBar, SW_SHOW);
 
+            AplicarModoQuebraLinha();
             AplicarFonte();
             AtualizarLayout(hw);
             DragAcceptFiles(hw, TRUE);
@@ -1551,6 +1548,7 @@ LRESULT CALLBACK WindowProc(
 
                         qAutomatica =
                             !qAutomatica;
+                        AplicarModoQuebraLinha();
 
                         MessageBoxW(
                             hw,
